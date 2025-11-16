@@ -1,99 +1,108 @@
+# items.py
 
 from abc import ABC, abstractmethod
 
+
 class Item(ABC):
-    """Classe abstraite représentant un objet du jeu."""
-    
-    def __init__(self, name):
+    """Classe de base pour tous les objets."""
+
+    def __init__(self, name: str):
         self.name = name
-    
+
     @abstractmethod
     def use(self, player):
-        """Méthode appelée quand l'objet est utilisé."""
+        """Utilisation de l'objet. Retourne True si l'objet est consommé."""
         pass
 
 
-# ---------------------
+# -----------------------------
 # Objets consommables
-# ---------------------
+# -----------------------------
 
 class Consumable(Item):
-    """Objets à usage unique (pas, nourriture, clés, dés...)."""
-    def __init__(self, name):
+    """Objets à usage unique."""
+    def __init__(self, name: str):
         super().__init__(name)
 
+
 class Food(Consumable):
-    """Nourriture qui rend des pas."""
-    def __init__(self, name, steps_restored):
+    """Nourriture qui rend des pas au joueur."""
+    def __init__(self, name: str, steps_restored: int):
         super().__init__(name)
         self.steps_restored = steps_restored
-    
+
     def use(self, player):
-        player.inventory.steps += self.steps_restored
-        return True  # indique que l'objet doit être retiré de l'inventaire
+        # On modifie les pas du joueur directement
+        player.steps += self.steps_restored
+        return True  # l'objet est consommé
 
 
 class Key(Consumable):
-    """Clé simple."""
+    """Clé simple (ouverte par door.open via inventory.keys)."""
     def __init__(self):
-        super().__init__("Key")
+        super().__init__("Clé")
 
     def use(self, player):
-        # utilisation gérée ailleurs (ouverture de porte)
-        return False  # la clé est consommée avant l'appel
+        # Utilisée indirectement par le système de portes
+        return False
 
 
 class Die(Consumable):
-    """Dé permettant un reroll de salles."""
+    """Dé pour relancer un tirage de salles (reroll)."""
     def __init__(self):
-        super().__init__("Die")
+        super().__init__("Dé")
 
     def use(self, player):
-        # effet géré par le RandomManager
+        # Gestion via inventory.dice / can_reroll_rooms
         return False
 
 
 class Gem(Consumable):
-    """Gemmes servant à acheter une salle."""
+    """Gemme utilisée pour payer le coût des salles."""
     def __init__(self):
-        super().__init__("Gem")
+        super().__init__("Gemme")
 
     def use(self, player):
         return False
 
 
-# ---------------------
+# -----------------------------
 # Objets permanents
-# ---------------------
+# -----------------------------
 
 class PermanentItem(Item):
-    """Objets avec effet permanent (kit de crochetage, pelle...)."""
-    
+    """Objets avec effet permanent (pelle, marteau, etc.)."""
+
     def use(self, player):
-        # on ne les "utilise" pas, ils ajoutent un effet permanent
+        # Pas d'usage direct, l'effet est passif / contextuel
         return False
 
 
 class Shovel(PermanentItem):
+    """Pelle pour creuser dans certaines salles."""
     def __init__(self):
-        super().__init__("Shovel")
+        super().__init__("Pelle")
 
 
 class Hammer(PermanentItem):
+    """Marteau qui réduit les dégâts des pièges."""
     def __init__(self):
-        super().__init__("Hammer")
+        super().__init__("Marteau")
 
 
 class LockpickKit(PermanentItem):
+    """Kit de crochetage permettant d'ouvrir certaines portes/coffres."""
     def __init__(self):
-        super().__init__("Lockpick Kit")
+        super().__init__("Kit de crochetage")
 
 
 class MetalDetector(PermanentItem):
+    """Détecteur de métaux (bonus pour trouver du loot)."""
     def __init__(self):
-        super().__init__("Metal Detector")
+        super().__init__("Détecteur")
 
 
 class RabbitFoot(PermanentItem):
+    """Patte de lapin (bonus de chance)."""
     def __init__(self):
-        super().__init__("Rabbit Foot")
+        super().__init__("Patte de lapin")
