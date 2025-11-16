@@ -1,8 +1,14 @@
 # Projet_POO_2025_BluePrince
 
-Projet réalisé dans le cadre du cours de Programmation Orienté Objet de Python - Master SI 2025-2026 (Sorbonne Université).  
-Version 2D simplifiée du jeu *The Blue Prince*, avec génération progressive d’un manoir, gestion d’inventaire et événements aléatoires.
-
+Projet réalisé dans le cadre du cours de Programmation Orientée Objet (Python), année Master SI 2025–2026 à Sorbonne Université.
+Ce projet propose une version 2D simplifiée du jeu The Blue Prince, incluant :
+	•	Génération progressive d’un manoir 5×9
+	•	Pioche finie de 46 salles (avec salles uniques)
+	•	Système d’inventaire avancé
+	•	Objets consommables et permanents
+	•	Portes verrouillées de niveaux 0/1/2
+	•	Événements aléatoires contextuels
+	•	Interface graphique intégrale en Pygame
 ---
 
 ##  Installation
