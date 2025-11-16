@@ -8,7 +8,6 @@ class DoorLockLevel(Enum):
     - UNLOCKED      (niveau 0 : déverrouillée, ne coûte pas de clé)
     - LOCKED        (niveau 1 : verrouillée, 1 clé ou kit de crochetage)
     - DOUBLE_LOCKED (niveau 2 : double tour, 1 clé obligatoire)
-    
     """
     UNLOCKED = 0
     LOCKED = 1
@@ -22,7 +21,6 @@ class Door:
     - is_open    : True si la porte est déjà ouverte
     La logique d'inventaire (clefs, kit de crochetage) est gérée par B.
     Ici on fournit seulement l'API.
-    
     """
 
     def __init__(self, lock_level: DoorLockLevel):

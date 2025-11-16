@@ -1,4 +1,4 @@
-# rooms_data.py
+# room_data.py
 """
 Pioche de salles pour Blue Prince 2D (version simplifiée).
 
@@ -236,13 +236,11 @@ ALL_ROOMS: List[Room] = [
     ),
 ]
 
-
 # ---------- Index par code court (short) ----------
 
 ROOM_BY_SHORT: Dict[str, Room] = {room.short: room for room in ALL_ROOMS}
 
 # Composition de la pioche (doit faire 46 au total)
-# Les salles avec objets permanents sont uniques : VRN, GBD, CEL, MCH.
 ROOM_COUNTS: Dict[str, int] = {
     # Couloirs
     "CV1": 6,
@@ -279,9 +277,9 @@ ROOM_COUNTS: Dict[str, int] = {
 
 def build_room_deck() -> List[Room]:
     """
-    Construit une pioche de 46 'cartes salle' en dupliquant
-    les modèles selon ROOM_COUNTS. La pioche contient des
-    références vers les modèles (on clonerra plus tard).
+    Construit une pioche de 46 'cartes salle' en dupliquant les modèles
+    selon ROOM_COUNTS. La pioche contient des références vers les modèles
+    (on clonerra plus tard).
     """
     deck: List[Room] = []
     total = 0
@@ -292,6 +290,5 @@ def build_room_deck() -> List[Room]:
             total += 1
 
     print("DEBUG: taille de la pioche de salles =", total)
-
     random.shuffle(deck)
     return deck

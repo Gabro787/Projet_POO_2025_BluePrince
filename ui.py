@@ -6,7 +6,6 @@ from items import Food  # pour compter la nourriture dans l'inventaire
 from constants import *
 from door import DoorLockLevel
 
-
 """
 Ce module contient tout l'affichage (UI) :
 - Grille, pièces, portes
@@ -45,10 +44,6 @@ ROOM_BONUS_TEXT = {
 
 
 def _draw_wrapped_text(surface, text, x, y, font, color, max_width) -> int:
-    """
-    Dessine du texte avec retour à la ligne automatique.
-    Retourne la nouvelle valeur de y après dessin.
-    """
     if not text:
         return y
 
@@ -60,7 +55,6 @@ def _draw_wrapped_text(surface, text, x, y, font, color, max_width) -> int:
         if w <= max_width:
             line = test_line
         else:
-            # Dessiner la ligne actuelle
             surf = font.render(line, True, color)
             surface.blit(surf, (x, y))
             y += h + 2
@@ -75,25 +69,15 @@ def _draw_wrapped_text(surface, text, x, y, font, color, max_width) -> int:
 
 
 def draw_grid(surface, manor):
-    """
-    Dessine la grille et les pièces connues du manoir.
-    - Chaque case est une tuile TILE x TILE.
-    - Si une Room est présente :
-        * si room.image est défini -> on blitte le sprite de salle
-        * sinon -> fond coloré
-      puis on dessine les portes et le label court.
-    """
     for r in range(ROWS):
         for c in range(COLS):
             x, y = c * TILE, r * TILE
             rect = pygame.Rect(x, y, TILE, TILE)
 
-            # Trait de grille
             pygame.draw.rect(surface, GRAY, rect, width=1)
 
             room = manor.get_room(r, c) if manor else None
 
-            # --- Dessin de la salle ---
             if room:
                 img = getattr(room, "image", None)
                 if img is not None:
@@ -103,7 +87,6 @@ def draw_grid(surface, manor):
                     color = COLORS_BY_ROOM_COLOR.get(getattr(room, "color", None), GRAY)
                     pygame.draw.rect(surface, color, rect.inflate(-8, -8), border_radius=8)
 
-            # --- Portes + label (par-dessus) ---
             if room:
                 for d in getattr(room, "doors", []):
                     lock_level = None
@@ -111,7 +94,6 @@ def draw_grid(surface, manor):
                         door = manor.get_door((r, c), d)
                         if door is not None and not door.is_open:
                             lock_level = door.lock_level
-
                     _draw_door(surface, rect, d, lock_level)
 
                 label = getattr(room, "short", "?")
@@ -120,9 +102,6 @@ def draw_grid(surface, manor):
 
 
 def _draw_door(surface, rect, direction, lock_level: DoorLockLevel | None = None):
-    """
-    Dessine une petite 'barre' sur le bord de la tuile pour représenter une porte.
-    """
     if lock_level is None or lock_level == DoorLockLevel.UNLOCKED:
         color = WHITE
         thickness = 4
@@ -133,36 +112,19 @@ def _draw_door(surface, rect, direction, lock_level: DoorLockLevel | None = None
         color = RED
         thickness = 8
 
-    w = 14  # longueur du trait de porte
+    w = 14
 
     if direction == "N":
-        pygame.draw.rect(
-            surface,
-            color,
-            (rect.centerx - w // 2, rect.top - 1, w, thickness),
-        )
+        pygame.draw.rect(surface, color, (rect.centerx - w // 2, rect.top - 1, w, thickness))
     if direction == "S":
-        pygame.draw.rect(
-            surface,
-            color,
-            (rect.centerx - w // 2, rect.bottom - thickness + 1, w, thickness),
-        )
+        pygame.draw.rect(surface, color, (rect.centerx - w // 2, rect.bottom - thickness + 1, w, thickness))
     if direction == "W":
-        pygame.draw.rect(
-            surface,
-            color,
-            (rect.left - 1, rect.centery - w // 2, thickness, w),
-        )
+        pygame.draw.rect(surface, color, (rect.left - 1, rect.centery - w // 2, thickness, w))
     if direction == "E":
-        pygame.draw.rect(
-            surface,
-            color,
-            (rect.right - thickness + 1, rect.centery - w // 2, thickness, w),
-        )
+        pygame.draw.rect(surface, color, (rect.right - thickness + 1, rect.centery - w // 2, thickness, w))
 
 
 def draw_player(surface, rc_pos):
-    """Dessine le joueur sous forme d'un petit disque jaune centré dans sa tuile."""
     r, c = rc_pos
     x = c * TILE + TILE // 2
     y = r * TILE + TILE // 2
@@ -170,21 +132,12 @@ def draw_player(surface, rc_pos):
 
 
 def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str = ""):
-    """
-    Dessine le HUD dans une colonne à droite de la grille :
-    - Ressources
-    - Inventaire
-    - Infos salle actuelle (type + bonus)
-    - Message
-    - Hint (contrôle contexte)
-    """
     hud_rect = pygame.Rect(COLS * TILE, 0, WIDTH - COLS * TILE, HEIGHT)
     pygame.draw.rect(surface, (32, 34, 44), hud_rect)
 
     x = COLS * TILE + 16
     y = 20
 
-    # -------- Ressources de base --------
     steps = getattr(player_state, "steps", 0)
     gems  = getattr(player_state, "gems", 0)
     gold  = getattr(player_state, "gold", 0)
@@ -209,10 +162,7 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
             text_x = icon_rect.right + 8
 
             text_rect = txt.get_rect()
-            text_rect.topleft = (
-                text_x,
-                y + (icon_rect.height - text_rect.height) // 2
-            )
+            text_rect.topleft = (text_x, y + (icon_rect.height - text_rect.height) // 2)
             surface.blit(txt, text_rect)
 
             line_height = max(icon_rect.height, text_rect.height)
@@ -223,7 +173,6 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
 
         y += line_height + 8
 
-    # -------- Inventaire détaillé --------
     inv = getattr(player_state, "inventory", None)
 
     if inv is not None:
@@ -232,7 +181,6 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
         surface.blit(title_inv, (x, y))
         y += title_inv.get_height() + 4
 
-        # Nourriture : compter les Food
         food_count = sum(1 for it in inv.items if isinstance(it, Food))
 
         icon_food = icons.get("food") if icons else None
@@ -244,10 +192,7 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
             text_x = icon_rect.right + 8
 
             text_rect = txt_food.get_rect()
-            text_rect.topleft = (
-                text_x,
-                y + (icon_rect.height - text_rect.height) // 2
-            )
+            text_rect.topleft = (text_x, y + (icon_rect.height - text_rect.height) // 2)
             surface.blit(txt_food, text_rect)
 
             line_height = max(icon_rect.height, text_rect.height)
@@ -258,7 +203,6 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
 
         y += line_height + 6
 
-        # Objets permanents AVEC description courte
         perm_labels = []
         perm_icons = []
 
@@ -289,10 +233,7 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
                     text_x = icon_rect.right + 8
 
                     text_rect = txt_perm.get_rect()
-                    text_rect.topleft = (
-                        text_x,
-                        y + (icon_rect.height - text_rect.height) // 2
-                    )
+                    text_rect.topleft = (text_x, y + (icon_rect.height - text_rect.height) // 2)
                     surface.blit(txt_perm, text_rect)
 
                     line_height = max(icon_rect.height, text_rect.height)
@@ -307,7 +248,6 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
             surface.blit(txt_perm, (x, y))
             y += txt_perm.get_height() + 4
 
-    # -------- Infos sur la salle actuelle --------
     if room is not None:
         y += 10
         title_room = FONT_MD.render("Salle actuelle :", True, WHITE)
@@ -335,14 +275,12 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
         surface.blit(txt_loot, (x, y))
         y += txt_loot.get_height() + 4
 
-        # Bonus / effet spécifique de cette salle
         bonus_txt = ROOM_BONUS_TEXT.get(room_short)
         if bonus_txt:
             bonus_surf = FONT_SM.render(f"Effet: {bonus_txt}", True, YELLOW)
             surface.blit(bonus_surf, (x, y))
             y += bonus_surf.get_height() + 4
 
-    # -------- Message d'état + hint --------
     max_w = hud_rect.width - 32
 
     if message:
@@ -354,13 +292,7 @@ def draw_hud(surface, player_state, message="", icons=None, room=None, hint: str
         y = _draw_wrapped_text(surface, hint, x, y, FONT_SM, YELLOW, max_w)
 
 
-# -------- Effets visuels : blink (direction) & pulsing (cartes) --------
-
 def draw_direction_hint(surface, rc_pos, dir_, visible=True):
-    """
-    Dessine l'indicateur de direction sur l'arête de la tuile du joueur
-    en mode CLIGNOTEMENT ON/OFF.
-    """
     if not dir_ or not visible:
         return
 
@@ -388,9 +320,6 @@ def _pulse_width(phase: float, w_min: int = 2, w_max: int = 8) -> int:
 
 
 def draw_pick_screen_pulse(surface, three_rooms, selected_idx, phase: float):
-    """
-    Affiche l'écran de sélection d'une salle parmi 3 propositions.
-    """
     grid_width = COLS * TILE
     grid_height = ROWS * TILE
 
@@ -461,12 +390,6 @@ def _draw_card_cost(surface, rect: pygame.Rect, cost: int):
 
 
 def draw_shop_window(surface, inventory, shop_message: str = ""):
-    """
-    Affiche une petite fenêtre centrée pour la Boutique (SHP).
-    - Affiche l'or actuel.
-    - Si le joueur n'a pas d'or, un message clair s'affiche.
-    - Affiche aussi le dernier message de la boutique (erreur achat, etc.).
-    """
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 180))
     surface.blit(overlay, (0, 0))
@@ -498,17 +421,16 @@ def draw_shop_window(surface, inventory, shop_message: str = ""):
         surface.blit(txt, (rect.left + 24, y))
         y += txt.get_height() + 4
 
-    # Si le joueur n'a aucune pièce d'or, on l'affiche clairement
     if inventory.gold == 0:
         warn = FONT_SM.render("Tu n'as aucune pièce d'or.", True, RED)
         surface.blit(warn, (rect.left + 24, y))
         y += warn.get_height() + 4
 
-    # Message spécifique de la boutique (ex: pas assez d'or, achat réussi)
     if shop_message:
         y += 4
         msg = FONT_SM.render(shop_message, True, YELLOW)
         surface.blit(msg, (rect.left + 24, y))
+
 
 def draw_end_screen(surface, win=True):
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)

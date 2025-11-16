@@ -8,8 +8,7 @@ ASSETS_DIR = "assets"
 # Image 4x4 des icônes HUD
 ITEMS_TILESET_PATH = os.path.join(ASSETS_DIR, "HUD.png")
 
-# Image des salles (ton gros png avec les 20 pièces)
-# ⚠️ Vérifie que le NOM DU FICHIER correspond bien à ce que tu as dans /assets
+# Image des salles 
 ROOMS_TILESET_PATH = os.path.join(ASSETS_DIR, "Sallee.png")
 
 """
@@ -20,7 +19,7 @@ Constantes du jeu :
 """
 
 # -------- Fenêtre / Grille --------
-TILE = 80                  # Taille d'une case en pixels
+TILE = 85                # Taille d'une case en pixels
 
 # Orientation : 5 colonnes (horizontal) x 9 lignes (vertical)
 COLS, ROWS = 5, 9          # Grille 5 x 9
@@ -66,5 +65,5 @@ KEY_CONFIRM = pygame.K_RETURN   # Valider (Entrée)
 KEY_CANCEL  = pygame.K_ESCAPE   # Annuler / quitter un menu (Échap)
 KEY_USE     = pygame.K_SPACE    # Action contextuelle
 
-# -------- Images (optionnel) --------
-IMG_ROOMS = {}  # À remplir plus tard {room_name: pygame.Surface}
+# -------- Images Futur options (pour le prochain patch si y'a le temps) --------
+IMG_ROOMS = {}  

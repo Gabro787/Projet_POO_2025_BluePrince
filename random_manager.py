@@ -25,9 +25,6 @@ class RandomManager:
     def draw_consumable(self):
         """
         Tire un objet consommable selon des probabilités modifiées.
-
-        La table de base contient un peu de nourriture, des gemmes, des clés, des dés.
-        Certains objets permanents (détecteur, patte de lapin) modifient la table.
         """
 
         base_table = [
@@ -59,11 +56,7 @@ class RandomManager:
     def draw_permanent(self):
         """
         Exemple de tirage d'un objet permanent rare.
-
-        En pratique, ce tirage pourra être appelé dans certaines salles spéciales
-        (coffre, boutique...) plutôt que sur un événement standard.
         """
-
         table = [
             (Shovel(), 0.25),
             (Hammer(), 0.25),

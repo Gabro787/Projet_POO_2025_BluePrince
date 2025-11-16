@@ -14,7 +14,6 @@ class Item(ABC):
         """Utilisation de l'objet. Retourne True si l'objet est consommé."""
         pass
 
-
 # -----------------------------
 # Objets consommables
 # -----------------------------

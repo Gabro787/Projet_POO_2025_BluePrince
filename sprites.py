@@ -2,6 +2,7 @@
 import pygame
 from pygame import Surface, Rect
 
+
 def load_tileset(path: str, tile_src: int, tile_dst: int) -> list[Surface]:
     """
     Version générique (grille sans marges ni espacements).
@@ -39,12 +40,7 @@ def load_tileset_with_margins(
     tile_dst: int,
 ) -> list[Surface]:
     """
-    Découpe un tileset avec :
-    - une marge (offset_x, offset_y) avant la première tuile,
-    - une taille de tuile (tile_w x tile_h),
-    - un espacement horizontal/vertical entre les tuiles (spacing_x, spacing_y).
-
-    Les tuiles sont ensuite redimensionnées en (tile_dst x tile_dst).
+    Découpe un tileset avec marge + espacement entre les tuiles.
     """
     sheet = pygame.image.load(path).convert_alpha()
     sheet_w, sheet_h = sheet.get_size()

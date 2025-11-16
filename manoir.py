@@ -278,4 +278,3 @@ class Manor:
         ou par Game lors du tirage de 3 pièces.
         """
         return [room for room in candidates if self.can_place_room(room, dest_rc, from_dir)]
-      

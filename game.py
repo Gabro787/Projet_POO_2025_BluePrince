@@ -2,16 +2,15 @@
 import pygame, random
 from typing import Dict, Tuple, List, Set
 
-from sprites import load_tileset  # pas utilisé directement mais OK
-from constants import ITEMS_TILESET_PATH
+from sprites import load_tileset  
+from constants import ITEMS_TILESET_PATH, ROOMS_TILESET_PATH
 from constants import *
 from manoir import Manor
 from room import Room, RoomType
-from room_data import ALL_ROOMS, clone_room   # adapte le nom si ton fichier s'appelle rooms_data.py
+from room_data import ALL_ROOMS, clone_room
 from door import DoorLockLevel
 from player import Player
 from random_manager import RandomManager
-from constants import ROOMS_TILESET_PATH
 
 from items import (
     Food, Gem, Key, Die,
@@ -19,30 +18,12 @@ from items import (
     MetalDetector, RabbitFoot,
 )
 
-"""
-Ce module gère :
-- la boucle de jeu principale,
-- les états (PLAY, PICK, END),
-- les entrées clavier (ZQSD, Entrée, Échap, T, E),
-- la logique de déplacement et de placement de salles,
-- l'affichage via ui.py,
-- la connexion avec le joueur (Player + Inventory) et RandomManager.
-
-Fonctionnalités :
-- Sélection de PORTE (direction) : clignotement ON/OFF (blink).
-- Menu de sélection de SALLE : pulsing sur la carte sélectionnée.
-- Pioche FINIE de salles, avec salles spéciales uniques.
-- Fouille de salle (T) limitée à une fois par case.
-- Interactions contextuelles (E) : creuser avec la pelle, marteau à l'entrée, etc.
-"""
-
 from ui import (
     draw_grid, draw_player, draw_hud,
     draw_pick_screen_pulse, draw_end_screen,
-    draw_direction_hint
+    draw_direction_hint, draw_shop_window,
 )
 
-# ---------- Classe Game ----------
 
 class Game:
     """
@@ -69,27 +50,23 @@ class Game:
         self.rng = RandomManager(self.player)
 
         # ---------- Pioche FINIE de salles (par type) ----------
-        # Templates accessibles par nom
         self.room_templates: Dict[str, Room] = {tpl.name: tpl for tpl in ALL_ROOMS}
 
-        # Salles qui doivent être uniques dans la pioche
-        # (par ex. Veranda = pelle, Suite royale = détecteur)
         UNIQUE_ROOM_NAMES = {"Veranda", "Suite royale"}
-
-        # Stock : nombre de copies restantes par nom de salle
         self.room_stock: Dict[str, int] = {}
         for tpl in ALL_ROOMS:
             if tpl.name in UNIQUE_ROOM_NAMES:
                 self.room_stock[tpl.name] = 1      # unique
             else:
-                self.room_stock[tpl.name] = 3      # 3 copies par défaut (ajuste si tu veux)
+                self.room_stock[tpl.name] = 3      # copies par défaut
 
         # Associer les sprites aux salles
         self.init_room_images()
 
-        # États
-        self.state = "PLAY"          # PLAY | PICK | END
+        # États : PLAY | PICK | SHOP | END
+        self.state = "PLAY"
         self.message = ""
+        self.shop_message = ""  # messages spécifiques à la boutique
 
         # Sélection direction (PLAY)
         self.pending_dir: str | None = None  # "N","S","E","W" ou None
@@ -97,64 +74,34 @@ class Game:
         # Sélection de pièces (PICK)
         self.pick_rooms: List[Room] = []
         self.pick_idx = 0
-        self._pending_dir: str | None = None     # direction qui a déclenché l'ouverture
-        self._pending_dest: Tuple[int, int] | None = None    # case destination (r,c)
+        self._pending_dir: str | None = None
+        self._pending_dest: Tuple[int, int] | None = None
         self._pending_key: Tuple[int, int, str] | None = None
 
         # Mémorisation des offres par porte :
-        # { (src_r, src_c, dir_) : {"rooms": [Room,...], "dest": (r,c)} }
         self.door_offers: dict[tuple[int, int, str], dict] = {}
 
-        # Effets visuels : blink (bool visible) & pulse (phase 0..1)
+        # Effets visuels
         self._blink_visible = True
         self._pulse_phase = 0.0
 
         # Fin de partie
         self.win = False
 
-        # Salles déjà fouillées (pour limiter T à 1 fois par case)
+        # Salles déjà fouillées (T)
         self.searched_rooms: Set[Tuple[int, int]] = set()
 
-        # Cases déjà creusées (pour E + pelle, entrée, etc.)
+        # interagir (E)
         self.dug_rooms: Set[Tuple[int, int]] = set()
 
+        # Effet d'entrée sur la salle de départ
+        start_room = self.manor.get_room(self.player.r, self.player.c)
+        if start_room is not None:
+            self.apply_room_entry_effect(start_room)
 
-    def use_first_food(self):
-        """
-        Cherche la première nourriture (Food) dans l'inventaire du joueur
-        et l'utilise. Si aucune nourriture n'est disponible, affiche un message.
-        Touche associée : F (en mode PLAY).
-        """
-        inv = self.player.inventory
-
-        from items import Food  # import local pour éviter les imports circulaires
-
-        # On cherche la première Food dans la liste des items
-        idx_food = None
-        for i, item in enumerate(inv.items):
-            if isinstance(item, Food):
-                idx_food = i
-                break
-
-        if idx_food is None:
-            self.message = "Tu n'as pas de nourriture dans ton inventaire."
-            return
-
-        # On récupère l'objet pour le message AVANT de l'utiliser (il sera supprimé si consommé)
-        food_item = inv.items[idx_food]
-        name = food_item.name
-        steps = food_item.steps_restored
-
-        inv.use_item(idx_food, self.player)
-        self.message = f"Tu manges {name} (+{steps} pas)."
     # ---------- Chargement des assets ----------
 
     def _load_item_icons(self) -> dict:
-        """
-        Charge le tileset des items HUD.png (4x4 icônes)
-        et prépare un dictionnaire d'icônes utilisables dans le HUD.
-        Chaque icône est redimensionnée en 32x32.
-        """
         try:
             sheet = pygame.image.load(ITEMS_TILESET_PATH).convert_alpha()
         except Exception as e:
@@ -162,14 +109,10 @@ class Game:
             return {}
 
         sheet_w, sheet_h = sheet.get_size()
-
-        # On sait que c'est une grille 4x4
         cols = 4
         rows = 4
         tile_src_w = sheet_w // cols
         tile_src_h = sheet_h // rows
-
-        # Taille d'affichage dans le HUD
         dst_size = 32
 
         tiles = []
@@ -182,38 +125,29 @@ class Game:
                 sub = pygame.transform.smoothscale(sub, (dst_size, dst_size))
                 tiles.append(sub)
 
-        print("DEBUG: tileset HUD chargé, nb de tuiles =", len(tiles))  # devrait être 16
+        print("DEBUG: tileset HUD chargé, nb de tuiles =", len(tiles))
 
         def safe(idx):
             return tiles[idx] if 0 <= idx < len(tiles) else None
 
         icons = {}
+        icons["gems"]          = safe(0)
+        icons["gold"]          = safe(1)
+        icons["dice"]          = safe(2)
+        icons["steps"]         = safe(12)
 
-        # Mapping en fonction de ta grille HUD.png
-        icons["gems"]          = safe(0)   # diamant
-        icons["gold"]          = safe(1)   # pièce d'or
-        icons["dice"]          = safe(2)   # dé
-        icons["steps"]         = safe(12)  # cœur bouclier = "vie/pas"
+        icons["food"]          = safe(4)
 
-        icons["food"]          = safe(4)   # pomme (nourriture principale)
-
-        icons["keys"]          = safe(13)  # clé
-        icons["perm_shovel"]   = safe(8)   # pelle
-        icons["perm_hammer"]   = safe(9)   # marteau
-        icons["perm_lockpick"] = safe(10)  # sac/kit
-        icons["perm_detector"] = safe(11)  # détecteur
-        icons["perm_rabbit"]   = safe(15)  # patte de lapin
+        icons["keys"]          = safe(13)
+        icons["perm_shovel"]   = safe(8)
+        icons["perm_hammer"]   = safe(9)
+        icons["perm_lockpick"] = safe(10)
+        icons["perm_detector"] = safe(11)
+        icons["perm_rabbit"]   = safe(15)
 
         return icons
 
     def _load_room_tiles(self) -> list:
-        """
-        Charge le tileset des salles (Salle.png) et le découpe en 20 sous-images.
-        L'image actuelle est une grille 4 colonnes x 5 lignes.
-
-        On découpe chaque cellule, on enlève un petit bord pour éviter les traits,
-        puis on redimensionne en TILE x TILE.
-        """
         tiles = []
         try:
             sheet = pygame.image.load(ROOMS_TILESET_PATH).convert_alpha()
@@ -222,11 +156,10 @@ class Game:
             return tiles
 
         sheet_w, sheet_h = sheet.get_size()
-        cols, rows = 4, 5      # 4 colonnes, 5 lignes
+        cols, rows = 4, 5
         cell_w = sheet_w // cols
         cell_h = sheet_h // rows
 
-        # On enlève un petit bord dans chaque case pour ne pas prendre les lignes de séparation
         margin_x = 4
         margin_y = 4
         inner_w = cell_w - 2 * margin_x
@@ -245,23 +178,16 @@ class Game:
         return tiles
 
     def init_room_images(self):
-        """
-        Associe à chaque Room une image en fonction de son tile_index.
-        - Pour les templates de room_data.ALL_ROOMS
-        - Pour les salles déjà présentes dans la grille du manoir
-        """
         if not self.room_tiles:
             return
 
-        from room_data import ALL_ROOMS  # adapte si besoin
+        from room_data import ALL_ROOMS
 
-        # Templates
         for tpl in ALL_ROOMS:
             idx = getattr(tpl, "tile_index", -1)
             if 0 <= idx < len(self.room_tiles):
                 tpl.image = self.room_tiles[idx]
 
-        # Salles déjà placées dans la grille (Entrée, Antechambre)
         for r in range(self.manor.rows):
             for c in range(self.manor.cols):
                 room = self.manor.get_room(r, c)
@@ -270,70 +196,152 @@ class Game:
                 idx = getattr(room, "tile_index", -1)
                 if 0 <= idx < len(self.room_tiles):
                     room.image = self.room_tiles[idx]
-                
+
+    # ---------- Gestion des effets d'entrée de salle ----------
+
+    def apply_room_entry_effect(self, room: Room) -> str | None:
+        """
+        Applique l'effet 'à l'entrée' d'une salle, une seule fois (room.visited).
+        Retourne un petit texte à ajouter au message.
+        """
+        if room.visited:
+            return None
+
+        room.visited = True
+        inv = self.player.inventory
+        msg = None
+
+        if room.short == "BED":
+            self.player.steps += 2
+            msg = "Tu te reposes un peu dans cette chambre (+2 pas)."
+
+        elif room.short == "SUI":
+            self.player.steps += 10
+            msg = "Tu te reposes longuement dans la suite royale (+10 pas)."
+
+        elif room.short == "VLT":
+            inv.add_gold(2)
+            inv.add_gems(1)
+            msg = "Tu trouves quelques trésors dès l'entrée (+2 or, +1 gemme)."
+
+        elif room.short == "TRS":
+            inv.add_gold(2)
+            inv.add_keys(1)
+            inv.add_gems(1)
+            msg = "Le sac déborde : +2 or, +1 clé, +1 gemme."
+
+        elif room.short == "VRN":
+            if not inv.has_shovel():
+                inv.add_item(Shovel())
+                msg = "Une pelle traîne ici : tu la prends."
+
+        elif room.short == "TRP":
+            dmg = 5
+            if inv.has_hammer():
+                dmg = 2
+            self.player.steps = max(0, self.player.steps - dmg)
+            msg = f"Un piège violent se déclenche (-{dmg} pas)."
+
+        elif room.short == "CHN":
+            dmg = 3
+            if inv.has_hammer():
+                dmg = 1
+            self.player.steps = max(0, self.player.steps - dmg)
+            msg = f"Des chaînes te ralentissent (-{dmg} pas)."
+
+        return msg
+
+    # ---------- Détection de blocage ----------
+
     def is_player_blocked(self) -> bool:
         """
-        Retourne True si le joueur ne peut plus progresser :
-        - Aucun déplacement possible vers une salle déjà posée
-        - Et aucune extension possible (case vide atteignable) parce qu'il
-          ne reste plus de salles dans la pioche.
+        Retourne True si le joueur ne peut plus PROGRESSER :
+        - Aucune nouvelle salle ne peut être posée autour de TOUTES les salles accessibles
+          (en tenant compte de la pioche et des verrous de portes).
+        On considère qu'on peut encore jouer tant qu'il existe AU MOINS :
+          * soit une case vide atteignable via une porte ouvrable,
+            sur laquelle on peut poser au moins une salle restante dans la pioche,
+          * soit l'antichambre atteignable (gérée ailleurs pour la victoire).
+        Le fait de pouvoir juste tourner en rond dans les mêmes salles ne suffit PAS :
+        si aucune extension n'est possible, on est bloqué.
         """
 
-        # Si déjà plus de pas, on considère que c'est une situation de défaite,
-        # mais check_end s'en charge directement.
+        # Si déjà plus de pas, on est de toute façon en défaite (check_end le gère aussi).
         if self.player.steps <= 0:
             return True
 
-        from_rc = (self.player.r, self.player.c)
+        inv = self.player.inventory
+        start_rc = (self.player.r, self.player.c)
 
-        # On regarde les 4 directions possibles
-        for dir_ in ("N", "S", "E", "W"):
-            dest = self.manor.valid_move(from_rc, dir_)
-            if not dest:
+        # On explore toutes les salles JOIGNABLES avec l'inventaire actuel
+        visited: set[tuple[int, int]] = set()
+        to_visit: list[tuple[int, int]] = [start_rc]
+
+        while to_visit:
+            r, c = to_visit.pop()
+            if (r, c) in visited:
+                continue
+            visited.add((r, c))
+
+            room_here = self.manor.get_room(r, c)
+            if room_here is None:
                 continue
 
-            nr, nc = dest
-            room = self.manor.get_room(nr, nc)
+            # Pour chaque direction depuis cette salle accessible
+            for dir_ in ("N", "S", "E", "W"):
+                dest = self.manor.valid_move((r, c), dir_)
+                if not dest:
+                    # Pas de porte (ou sortie du manoir)
+                    continue
 
-            if room is not None:
-                # Il y a déjà une salle : on pourra au moins s'y déplacer
-                return False
+                nr, nc = dest
 
-            # Case vide : on peut potentiellement poser une salle ici
-            # seulement s'il reste des salles dans la pioche.
-            if hasattr(self, "room_deck") and len(self.room_deck) > 0:
-                return False
+                # Porte correspondante
+                door = self.manor.ensure_door((r, c), dir_)
+                if door is not None and not (door.is_open or door.can_open(inv)):
+                    # Porte présente mais impossible à ouvrir avec l'inventaire actuel
+                    continue
 
-        # Si on arrive ici : aucune salle voisine et aucune extension possible
+                dest_room = self.manor.get_room(nr, nc)
+
+                # ---- Cas 1 : case vide derrière une porte ouvrable -> peut-on poser une salle ? ----
+                if dest_room is None:
+                    # On teste toutes les salles encore présentes dans la pioche (room_stock > 0)
+                    for tpl in self.room_templates.values():
+                        if self.room_stock.get(tpl.name, 0) <= 0:
+                            continue
+                        ghost = clone_room(tpl)
+                        if self.manor.can_place_room(ghost, (nr, nc), dir_):
+                            # On a trouvé AU MOINS UNE extension possible -> le joueur n'est pas bloqué
+                            return False
+                    # Si aucune salle ne peut être posée ici, on continue à chercher ailleurs
+                    continue
+
+                # ---- Cas 2 : salle existante atteignable -> on l'ajoute au BFS ----
+                if (nr, nc) not in visited:
+                    to_visit.append((nr, nc))
+
+        # Si on a exploré toute la zone atteignable sans trouver d'extension possible,
+        # alors le joueur est réellement bloqué.
         return True
+
 
     # ---------- Gestion des effets visuels ----------
 
     def update_blink(self):
-        """Met à jour la visibilité du clignotement ON/OFF pour l'indicateur de direction."""
         now = pygame.time.get_ticks()
         self._blink_visible = ((now // BLINK_PERIOD_MS) % 2) == 0
 
     def update_pulse(self):
-        """Met à jour la phase du pulsing (0..1) pour le cadre de sélection de salle."""
         now = pygame.time.get_ticks()
         self._pulse_phase = (now % PULSE_PERIOD_MS) / PULSE_PERIOD_MS
 
     # ---------- Gestion des entrées ----------
 
     def handle_play_input(self, event: pygame.event.Event):
-        """
-        Gestion des touches durant l'état PLAY :
-        - Z/Q/S/D : sélectionner une direction (sans bouger immédiatement)
-        - Entrée  : valider la direction sélectionnée et tenter le mouvement
-        - Échap/Espace : annuler la sélection en cours
-        - T : fouiller la salle actuelle (une seule fois par case)
-        - E : interaction contextuelle (pelle dans jardin / entrée, etc.)
-        """
         if event.type != pygame.KEYDOWN:
             return
 
-        # Choisir une direction (ne bouge pas immédiatement)
         if event.key in (KEY_UP, KEY_LEFT, KEY_DOWN, KEY_RIGHT):
             self.pending_dir = {
                 KEY_UP: "N", KEY_LEFT: "W", KEY_DOWN: "S", KEY_RIGHT: "E"
@@ -342,7 +350,7 @@ class Game:
                 f"Direction sélectionnée: {self.pending_dir}. "
                 "Entrée pour valider, Échap/Espace pour annuler."
             )
-        # Valider la direction choisie
+
         elif event.key == KEY_CONFIRM:
             if self.pending_dir:
                 dir_ = self.pending_dir
@@ -351,31 +359,20 @@ class Game:
             else:
                 self.message = "Aucune direction sélectionnée."
 
-        # Annuler la sélection
         elif event.key == KEY_CANCEL or event.key == KEY_USE:
             self.pending_dir = None
             self.message = "Sélection annulée."
 
-        # Fouille de la salle (une seule fois par case)
         elif event.key == pygame.K_t:
             self.search_current_room()
-        
-        #manger
-        elif event.key == pygame.K_f:
-             self.use_first_food()
 
-        # Interaction contextuelle (pelle, marteau, etc.)
+        elif event.key == pygame.K_f:
+            self.use_first_food()
+
         elif event.key == pygame.K_e:
             self.interact_current_room()
- 
+
     def handle_pick_input(self, event):
-        """
-        Gestion des touches durant l'état PICK (sélection de salle) :
-        - ← / → (ou A / E) : naviguer parmi les 3 cartes
-        - Entrée : valider la carte sélectionnée et placer la salle
-        - Échap  : annuler et revenir à PLAY (rien n'est consommé)
-        - R      : relancer le tirage de 3 salles pour cette porte (consomme 1 dé)
-        """
         if event.type != pygame.KEYDOWN:
             return
 
@@ -392,25 +389,21 @@ class Game:
                 self.confirm_pick()
 
         elif event.key == KEY_CANCEL:
-            # Quitter le menu sans rien poser
             self.pick_rooms = []
             self.state = "PLAY"
             self.message = "Sélection de salle annulée. Choisis une autre porte."
-            # On nettoie l'état temporaire, mais on garde door_offers pour retrouver l'offre
             self.pending_dir = None
             self._pending_dir = None
             self._pending_dest = None
             self._pending_key = None
 
         elif event.key == pygame.K_r:
-            # Reroll : relancer le tirage de salles pour cette porte si on a un dé
             inv = self.player.inventory
             if not inv.can_reroll_rooms():
                 self.message = "Pas de dé pour relancer le tirage."
                 return
 
             if self._pending_dir is None or self._pending_dest is None or self._pending_key is None:
-                # Sécurité : on ne devrait pas arriver ici, mais on évite un crash
                 self.message = "Impossible de relancer ici."
                 return
 
@@ -418,49 +411,121 @@ class Game:
                 self.message = "Pas de dé pour relancer le tirage."
                 return
 
-            # On relance un tirage de salles pour la même porte
             self.message = "Tu relances le tirage (1 dé consommé)."
             self.roll_three_rooms(self._pending_dir, self._pending_dest, self._pending_key)
 
+    def handle_shop_input(self, event: pygame.event.Event):
+        """
+        Gestion des touches dans la boutique :
+        - 1 : Clé (5 or)
+        - 2 : Nourriture (+4 pas) (3 or)
+        - 3 : Dé (8 or)
+        - 4 : Patte de lapin (12 or)
+        - Échap : quitter la boutique
+        """
+        if event.type != pygame.KEYDOWN:
+            return
+
+        inv = self.player.inventory
+
+        if event.key == KEY_CANCEL:
+            self.state = "PLAY"
+            self.shop_message = ""
+            self.message = "Tu quittes la boutique."
+            return
+
+        # Achat n°1 : Clé
+        if event.key == pygame.K_1:
+            cost = 5
+            if inv.gold >= cost:
+                inv.gold -= cost
+                inv.add_keys(1)
+                self.shop_message = "Tu achètes une clé (-5 or)."
+            else:
+                self.shop_message = "Pas assez d'or pour la clé."
+            return
+
+        # Achat n°2 : nourriture (+4 pas)
+        if event.key == pygame.K_2:
+            cost = 3
+            if inv.gold >= cost:
+                inv.gold -= cost
+                inv.add_item(Food("Ration de voyage", 4))
+                self.shop_message = "Tu achètes une ration (+4 pas)."
+            else:
+                self.shop_message = "Pas assez d'or pour la nourriture."
+            return
+
+        # Achat n°3 : dé
+        if event.key == pygame.K_3:
+            cost = 8
+            if inv.gold >= cost:
+                inv.gold -= cost
+                inv.add_dice(1)
+                self.shop_message = "Tu achètes un dé (-8 or)."
+            else:
+                self.shop_message = "Pas assez d'or pour le dé."
+            return
+
+        # Achat n°4 : patte de lapin
+        if event.key == pygame.K_4:
+            cost = 12
+            if inv.gold >= cost:
+                inv.gold -= cost
+                if not inv.has_rabbit_foot():
+                    inv.add_item(RabbitFoot())
+                    self.shop_message = "Tu achètes une patte de lapin (-12 or)."
+                else:
+                    self.shop_message = "Tu as déjà une patte de lapin."
+            else:
+                self.shop_message = "Pas assez d'or pour la patte de lapin."
+
     def handle_end_input(self, event: pygame.event.Event):
-        """
-        Gestion des touches durant l'état END :
-        - Entrée : relancer une nouvelle partie.
-        """
         if event.type == pygame.KEYDOWN and event.key == KEY_CONFIRM:
-            # Restart : nouveau manoir + nouveau joueur
             new_manor = Manor()
             new_player = Player(*new_manor.start)
             self.__init__(new_manor, new_player)
 
+    # ---------- Gestion de la nourriture ----------
+
+    def use_first_food(self):
+        inv = self.player.inventory
+        from items import Food
+
+        idx_food = None
+        for i, item in enumerate(inv.items):
+            if isinstance(item, Food):
+                idx_food = i
+                break
+
+        if idx_food is None:
+            self.message = "Tu n'as pas de nourriture dans ton inventaire."
+            return
+
+        food_item = inv.items[idx_food]
+        name = food_item.name
+        steps = food_item.steps_restored
+
+        inv.use_item(idx_food, self.player)
+        self.message = f"Tu manges {name} (+{steps} pas)."
+
     # ---------- Logique de jeu : déplacement ----------
 
     def try_move(self, dir_: str):
-        """
-        Tente de se déplacer dans la direction 'dir_'.
-
-        Étapes :
-        1) Vérifier qu'il reste des pas.
-        2) Demander au manoir si un déplacement géométrique est possible (valid_move).
-           -> prend en compte les portes dessinées sur les salles (room.doors).
-        3) Gérer la porte verrouillée éventuelle (Door + inventaire).
-        4) Si la case cible est vide : ouvrir le menu PICK (tirage de salles).
-        5) Sinon : consommer 1 pas, se déplacer, tester la fin.
-        """
-        # 1) Pas restants
         if self.player.steps <= 0:
             self.lose("Plus de pas !")
             return
 
         src_rc = (self.player.r, self.player.c)
 
-        # 2) Vérification géométrique via le manoir (porte + limites)
         dest = self.manor.valid_move(src_rc, dir_)
         if not dest:
             self.message = "Mur."
+            # Si après ce mur il n'existe vraiment aucun autre chemin, on perd.
+            if self.is_player_blocked():
+                self.lose("Le manoir est bloqué : plus aucun chemin possible.")
             return
 
-        # 3) Porte verrouillée éventuelle (Door)
         door = self.manor.ensure_door(src_rc, dir_)
         if door is not None and not door.is_open:
             # On tente d'ouvrir la porte avec l'inventaire du joueur
@@ -472,20 +537,21 @@ class Game:
                     self.message = "Porte à double tour. Il te faut une clé."
                 else:
                     self.message = "Impossible d'ouvrir cette porte."
+
+                #  on teste si VRAIMENT toutes les directions sont mortes
+                if self.is_player_blocked():
+                    self.lose("Tu ne peux ouvrir aucune porte : le manoir est bloqué.")
                 return
             else:
                 # Succès de l'ouverture (clé consommée si nécessaire)
                 self.message = "Tu ouvres la porte."
 
-        # 4) On peut maintenant gérer la case cible
         nr, nc = dest
         target_room = self.manor.get_room(nr, nc)
 
         if target_room is None:
-            # Case vide : ouverture de porte vers une zone inexplorée -> menu PICK
             door_key = (src_rc[0], src_rc[1], dir_)
 
-            # Si une offre existe déjà pour cette porte, on la réutilise.
             if door_key in self.door_offers:
                 offer = self.door_offers[door_key]
                 self.pick_rooms = offer["rooms"]
@@ -497,35 +563,31 @@ class Game:
                 self.message = "Choisis une pièce pour cette porte."
                 return
 
-            # Sinon, tirage d'un nouveau trio de salles.
             self.roll_three_rooms(dir_, dest, door_key)
+            if not self.pick_rooms and self.is_player_blocked():
+                self.lose("Le manoir est bloqué : plus aucune pièce ne peut être posée.")
             return
 
-        # 5) Déplacement dans une pièce déjà connue
+        # Déplacement dans une pièce déjà connue
         self.player.steps -= 1
         self.player.r, self.player.c = nr, nc
-        self.message = f"Tu avances vers {dir_}."
+
+        entry_msg = self.apply_room_entry_effect(target_room)
+        if entry_msg:
+            self.message = f"Tu avances vers {dir_}. {entry_msg}"
+        else:
+            self.message = f"Tu avances vers {dir_}."
+
         self.check_end((nr, nc))
 
     # ---------- Pioche FINIE de salles ----------
 
     def roll_three_rooms(self, dir_: str, dest_rc: tuple[int, int], door_key: tuple[int, int, str]):
-        """
-        Tire jusqu'à 3 salles compatibles avec dest_rc / dir_, à partir d'une
-        pioche FINIE :
-        - self.room_templates : modèles de salles
-        - self.room_stock     : nombre de copies restantes par nom
-
-        On ne consomme la pioche que LORSQU'ON POSE vraiment une salle
-        (dans confirm_pick), pas au moment de l'offre.
-        """
-        # 1) On part des templates qui ont encore du stock > 0
         available_templates = [
             tpl for tpl in self.room_templates.values()
             if self.room_stock.get(tpl.name, 0) > 0
         ]
 
-        # 2) On garde seulement celles qui peuvent être placées à cet endroit
         candidates: list[Room] = []
         for tpl in available_templates:
             ghost = clone_room(tpl)
@@ -533,27 +595,22 @@ class Game:
                 candidates.append(tpl)
 
         if not candidates:
-            self.message = "Aucune salle ne peut être placée ici (pioche épuisée)."
+            self.message = "Aucune salle ne peut être placée ici (pioche épuisée ou incompatible)."
+            self.pick_rooms = []
             return
 
-        # 3) On mélange les candidats et on en prend jusqu'à 3
         random.shuffle(candidates)
         pick_templates = candidates[:3]
-
-        # 4) Les salles proposées sont des COPIES indépendantes
         pick_rooms = [clone_room(tpl) for tpl in pick_templates]
 
-        # 5) On force au moins une salle à 0 gemme pour ne pas bloquer le joueur
         if pick_rooms and all(room.gem_cost > 0 for room in pick_rooms):
             pick_rooms[0].gem_cost = 0
 
-        # 6) On mémorise cette offre pour cette porte
         self.door_offers[door_key] = {
             "rooms": pick_rooms,
             "dest": dest_rc,
         }
 
-        # 7) On entre en mode PICK avec ces salles
         self.pick_rooms = pick_rooms
         self.pick_idx = 0
         self.state = "PICK"
@@ -563,46 +620,36 @@ class Game:
         self.message = "Choisis une pièce pour cette porte."
 
     def confirm_pick(self):
-        """
-        Valide la salle sélectionnée :
-        - Vérifie le coût en gemmes
-        - Pose la salle sur la destination pendante
-        - Consomme 1 pas pour 'entrer' dans la salle posée
-        - Retire UNE copie de ce type de salle de la pioche
-        - Revient à PLAY et teste la fin
-        - Nettoie l'offre associée à cette porte (door_offers)
-        """
         chosen = self.pick_rooms[self.pick_idx]
         if chosen.gem_cost > self.player.gems:
             self.message = "Pas assez de gemmes."
             return
 
-        # Payer
         self.player.gems -= chosen.gem_cost
 
-        # Poser la salle
         r, c = self._pending_dest
         self.manor.set_room(r, c, chosen)
 
-        # Consommer UNE copie de ce type dans la pioche
         name = getattr(chosen, "name", None)
-        if name is not None and name in self.room_stock:
-            if self.room_stock[name] > 0:
-                self.room_stock[name] -= 1
+        if name is not None and name in self.room_stock and self.room_stock[name] > 0:
+            self.room_stock[name] -= 1
 
         self.state = "PLAY"
-        self.message = f"Ajouté: {chosen.name}"
 
-        # Entrer dans la nouvelle pièce = 1 pas
         self.player.steps -= 1
         self.player.r, self.player.c = r, c
+
+        entry_msg = self.apply_room_entry_effect(chosen)
+        if entry_msg:
+            self.message = f"Ajouté: {chosen.name}. {entry_msg}"
+        else:
+            self.message = f"Ajouté: {chosen.name}."
+
         self.check_end((r, c))
 
-        # Nettoyage de l'offre liée à cette porte
         if self._pending_key is not None:
             self.door_offers.pop(self._pending_key, None)
 
-        # Nettoyage de l'état temporaire
         self.pick_rooms = []
         self._pending_dir = None
         self._pending_dest = None
@@ -617,8 +664,8 @@ class Game:
         - Victoire : si on atteint l'antichambre.
         - Défaite : 
             * si les pas tombent à 0 ou moins,
-            * ou si le manoir est bloqué (plus aucune salle accessible
-              ou posable, et pioche éventuellement vide).
+            * ou si le manoir est bloqué (plus aucune nouvelle salle posable
+              ni progression possible à partir des salles accessibles).
         """
         # 1) Victoire : on est arrivé à l'antichambre
         if rc == self.manor.antechamber_rc:
@@ -632,26 +679,19 @@ class Game:
             self.lose("Plus de pas !")
             return
 
-        # 3) Défaite : manoir bloqué (plus aucun chemin possible)
+        # 3) Défaite : manoir bloqué (plus aucun chemin possible / aucune nouvelle salle posable)
         if self.is_player_blocked():
-            if hasattr(self, "room_deck") and len(self.room_deck) == 0:
-                self.lose("Le manoir est bloqué et il n'y a plus de salles dans la pioche.")
-            else:
-                self.lose("Le manoir est bloqué : plus aucun chemin possible.")
-
+            self.lose(
+                "Le manoir est bloqué : plus aucune porte ouvrable ni nouvelle salle à poser."
+            )
     def lose(self, cause: str):
-        """Déclare la défaite avec un message explicite, puis passe à END."""
         self.win = False
         self.message = cause
         self.state = "END"
 
     # ---------- Fouille & interactions de salles ----------
+
     def search_current_room(self):
-        """
-        Fouille la salle actuelle (touche T).
-        - Limité à une fois par case.
-        - Effets spéciaux selon le type / nom de la salle.
-        """
         r, c = self.player.r, self.player.c
         room = self.manor.get_room(r, c)
 
@@ -666,8 +706,6 @@ class Game:
         self.searched_rooms.add((r, c))
         inv = self.player.inventory
 
-        # ---- Effets spéciaux ----
-
         # Jardin → nourriture ou patte de lapin
         if room.name == "Jardin intérieur":
             if not inv.has_rabbit_foot() and random.random() < 0.3:
@@ -678,12 +716,30 @@ class Game:
                 self.message = "Tu trouves de la nourriture fraîche (+5 pas)."
             return
 
+        # Veranda → pelle unique
+        if room.name == "Veranda":
+            if not inv.has_shovel():
+                inv.add_item(Shovel())
+                self.message = "Tu trouves une pelle appuyée contre le mur."
+            else:
+                inv.add_item(Food("Collation", 3))
+                self.message = "Tu trouves un petit encas (+3 pas)."
+            return
+
         # Salle des coffres → loot massif
         if room.name == "Salle des coffres":
             inv.add_gems(2)
             inv.add_gold(5)
             inv.add_keys(1)
             self.message = "Tu ouvres un coffre rempli : +2 gemmes, +5 or, +1 clé."
+            return
+
+        # Salle avec sac → gros loot orienté or
+        if room.name == "Salle avec sac":
+            inv.add_gold(4)
+            inv.add_gems(1)
+            inv.add_keys(1)
+            self.message = "Le sac est lourd : +4 or, +1 gemme, +1 clé."
             return
 
         # Suite royale → détecteur ou repos
@@ -716,7 +772,7 @@ class Game:
                 self.message = "Tu récupères une petite clé."
             return
 
-        # Marchand ambulant → patte de lapin possible
+        # Marchand ambulant → patte de lapin possible en fouille aussi
         if room.name == "Marchand ambulant":
             if not inv.has_rabbit_foot():
                 inv.add_item(RabbitFoot())
@@ -726,13 +782,13 @@ class Game:
                 self.message = "Il te donne une pièce d'or."
             return
 
-        # Salle piégée
+        # Salle piégée (fouille = piège)
         if room.room_type == RoomType.TRAP:
             self.player.steps = max(0, self.player.steps - 3)
             self.message = "Un piège se déclenche ! (-3 pas)"
             return
 
-        # ---- Fouille par défaut : item consommable ----
+        # Fouille par défaut
         item = self.rng.draw_consumable()
         inv = self.player.inventory
 
@@ -753,12 +809,6 @@ class Game:
             self.message = f"Tu trouves un objet : {item.name}"
 
     def interact_current_room(self):
-        """
-        Interaction contextuelle (touche E) :
-        - Jardin + pelle : creuser pour un objet aléatoire (une fois par case).
-        - Entrée + pelle : creuser pour un marteau (unique).
-        - Sinon : message 'Rien de spécial'.
-        """
         r, c = self.player.r, self.player.c
         room = self.manor.get_room(r, c)
 
@@ -781,14 +831,12 @@ class Game:
                     self.message = "Tu as déjà creusé ici."
                 return
 
-            # On creuse
             self.dug_rooms.add((r, c))
             if not inv.has_hammer():
                 inv.add_item(Hammer())
                 self.message = "Tu déterres un vieux marteau !"
             else:
                 self.message = "Tu ne trouves plus rien d'utile."
-
             return
 
         # Jardin : creuser avec pelle
@@ -802,7 +850,6 @@ class Game:
                 return
 
             self.dug_rooms.add((r, c))
-            # Petit loot aléatoire
             roll = random.random()
             if roll < 0.4:
                 inv.add_gems(1)
@@ -815,7 +862,7 @@ class Game:
                 self.message = "Tu déterres un vieux dé."
             return
 
-        # Veranda : endroit logique où on peut obtenir la pelle en fouille (géré dans search)
+        # Veranda : interaction simple
         if room.name == "Veranda":
             if not inv.has_shovel():
                 self.message = "Une pelle traîne probablement ici... fouille la salle (T)."
@@ -823,53 +870,21 @@ class Game:
                 self.message = "Rien de plus à faire ici."
             return
 
-        # Boutique / Marchand : pour l'instant, pas d'UI de shop avancée → simple message.
+        # Boutique / Marchand : ouvrir la boutique si on a de l'or
         if room.name in ("Boutique", "Marchand ambulant"):
             if self.player.gold <= 0:
                 self.message = "Tu n'as pas d'or pour acheter quelque chose."
             else:
-                self.message = "Ici, tu pourras plus tard acheter des objets (WIP)."
+                self.state = "SHOP"
+                self.shop_message = ""
+                self.message = "La boutique est ouverte (1-4 pour acheter, Échap pour quitter)."
             return
 
-        # Par défaut
         self.message = "Rien de spécial à faire ici."
-
-    # ---------- Intégration RandomManager : tirage de test (optionnel) ----------
-
-    def test_draw_consumable(self):
-        """
-        Ancienne méthode de test (non utilisée directement par les touches
-        maintenant que T fouille la salle).
-        On la garde pour debug éventuel.
-        """
-        item = self.rng.draw_consumable()
-        inv = self.player.inventory
-
-        if isinstance(item, Food):
-            inv.add_item(item)
-            self.message = f"[TEST] Nourriture : {item.name}."
-        elif isinstance(item, Gem):
-            inv.add_gems(1)
-            self.message = "[TEST] +1 gemme."
-        elif isinstance(item, Key):
-            inv.add_keys(1)
-            self.message = "[TEST] +1 clé."
-        elif isinstance(item, Die):
-            inv.add_dice(1)
-            self.message = "[TEST] +1 dé."
-        else:
-            inv.add_item(item)
-            self.message = f"[TEST] Objet : {item.name}."
 
     # ---------- Boucle principale ----------
 
     def run(self):
-        """
-        Boucle de jeu :
-        - Lecture des événements
-        - Mise à jour des effets visuels (blink & pulse)
-        - Rendu de la grille, du joueur, de l'UI et des écrans
-        """
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -878,22 +893,20 @@ class Game:
                     self.handle_play_input(event)
                 elif self.state == "PICK":
                     self.handle_pick_input(event)
+                elif self.state == "SHOP":
+                    self.handle_shop_input(event)
                 elif self.state == "END":
                     self.handle_end_input(event)
 
-            # Met à jour les effets visuels
             self.update_blink()
             self.update_pulse()
 
-            # Rendu principal
             self.screen.fill(BG)
             draw_grid(self.screen, self.manor)
             draw_player(self.screen, (self.player.r, self.player.c))
 
-            # Salle actuelle (pour le HUD)
             current_room = self.manor.get_room(self.player.r, self.player.c)
 
-            # Indicateur de direction en mode clignotement (pendant PLAY)
             if self.state == "PLAY":
                 draw_direction_hint(
                     self.screen,
@@ -902,10 +915,8 @@ class Game:
                     self._blink_visible
                 )
 
-            # HUD (on passe aussi la salle actuelle)
             draw_hud(self.screen, self.player, self.message, self.item_icons, current_room)
 
-            # Écrans d'état
             if self.state == "PICK":
                 draw_pick_screen_pulse(
                     self.screen,
@@ -913,14 +924,16 @@ class Game:
                     self.pick_idx,
                     self._pulse_phase
                 )
+
+            if self.state == "SHOP":
+                draw_shop_window(self.screen, self.player.inventory, self.shop_message)
+
             if self.state == "END":
                 draw_end_screen(self.screen, win=self.win)
 
             pygame.display.flip()
             self.clock.tick(FPS)
 
-
-# ---------- Lancement ----------
 
 if __name__ == "__main__":
     random.seed()

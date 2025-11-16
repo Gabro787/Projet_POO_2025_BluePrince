@@ -24,24 +24,17 @@ class Player:
     # ----------------------------
 
     def move_to(self, r: int, c: int) -> None:
-        """
-        Place le joueur à une position (r, c) sans gérer la consommation de pas.
-        La logique "1 pas par déplacement" est gérée dans Game.
-        """
+        """Place le joueur à une position (r, c) sans gérer la consommation de pas."""
         self.r = r
         self.c = c
 
     def move_delta(self, dr: int, dc: int) -> None:
-        """
-        Déplace le joueur selon un delta (dr, dc).
-        Ne gère pas la consommation de pas (laisse ça à Game).
-        """
+        """Déplace le joueur selon un delta (dr, dc)."""
         self.r += dr
         self.c += dc
 
     # ----------------------------
     # Accès aux ressources
-    # (propriétés pour compatibilité avec game/ui)
     # ----------------------------
 
     @property
