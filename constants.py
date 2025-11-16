@@ -1,18 +1,37 @@
 # constants.py
 import pygame
+import os
+
+# -------- Dossiers / chemins --------
+ASSETS_DIR = "assets"
+
+# Image 4x4 des icônes HUD
+ITEMS_TILESET_PATH = os.path.join(ASSETS_DIR, "HUD.png")
+
+# Image des salles (ton gros png avec les 20 pièces)
+# ⚠️ Vérifie que le NOM DU FICHIER correspond bien à ce que tu as dans /assets
+ROOMS_TILESET_PATH = os.path.join(ASSETS_DIR, "Sallee.png")
 
 """
-Ce module centralise toutes les constantes du jeu :
-- Dimensions de la grille et de la fenêtre
-- Couleurs et polices
-- Paramètres des effets visuels (clignotement et pulsing)
-- Mappings des touches (AZERTY)
+Constantes du jeu :
+- Grille 5 x 9
+- HUD à droite
+- Taille réduite pour que la fenêtre tienne sur l'écran
 """
 
 # -------- Fenêtre / Grille --------
-TILE = 96                  # Taille d'une case en pixels
-COLS, ROWS = 9, 5          # Grille 9 colonnes x 5 lignes
-WIDTH, HEIGHT = COLS * TILE, ROWS * TILE + 120  # Hauteur totale = grille + HUD
+TILE = 80                  # Taille d'une case en pixels
+
+# Orientation : 5 colonnes (horizontal) x 9 lignes (vertical)
+COLS, ROWS = 5, 9          # Grille 5 x 9
+
+# Largeur réservée au HUD sur la droite
+HUD_WIDTH = 500
+
+# Taille de la fenêtre :
+WIDTH  = COLS * TILE + HUD_WIDTH
+HEIGHT = ROWS * TILE
+
 FPS = 60                   # Images par seconde
 
 # -------- Couleurs --------
@@ -25,33 +44,27 @@ RED    = (220, 70, 70)
 YELLOW = (230, 200, 80)
 PURPLE = (170, 120, 220)
 ORANGE = (230, 150, 70)
-BG     = (25, 27, 35)      # Couleur de fond
+BG     = (25, 27, 35)
 
 # -------- Polices --------
 pygame.font.init()
-FONT_SM = pygame.font.SysFont("consolas", 18)
-FONT_MD = pygame.font.SysFont("consolas", 22, bold=True)
-FONT_LG = pygame.font.SysFont("consolas", 36, bold=True)
+FONT_SM = pygame.font.SysFont("consolas", 14)
+FONT_MD = pygame.font.SysFont("consolas", 18, bold=True)
+FONT_LG = pygame.font.SysFont("consolas", 28, bold=True)
 
 # -------- Effets visuels --------
-"""
-Clignotement (ON/OFF) : utilisé pour l'indicateur de direction (porte).
-Pulsing (épaisseur qui 'respire') : utilisé pour le cadre de la carte sélectionnée dans le menu.
-"""
-BLINK_PERIOD_MS = 300   # Période du clignotement (ON/OFF) en millisecondes
-PULSE_PERIOD_MS = 900   # Période du pulsing (inspire/expire) en millisecondes
+BLINK_PERIOD_MS = 300   # Clignotement ON/OFF (ms)
+PULSE_PERIOD_MS = 900   # Pulsing (ms)
 
 # -------- Touches (AZERTY) --------
-# Déplacements
 KEY_UP    = pygame.K_z
 KEY_LEFT  = pygame.K_q
 KEY_DOWN  = pygame.K_s
 KEY_RIGHT = pygame.K_d
 
-# Validation / Annulation / Action
 KEY_CONFIRM = pygame.K_RETURN   # Valider (Entrée)
 KEY_CANCEL  = pygame.K_ESCAPE   # Annuler / quitter un menu (Échap)
-KEY_USE     = pygame.K_SPACE    # Action contextuelle (ici: annuler aussi)
+KEY_USE     = pygame.K_SPACE    # Action contextuelle
 
 # -------- Images (optionnel) --------
 IMG_ROOMS = {}  # À remplir plus tard {room_name: pygame.Surface}
